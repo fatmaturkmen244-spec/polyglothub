@@ -7,6 +7,9 @@ import FlashCards from './components/FlashCards'
 import Practice from './components/Practice'
 import Chat from './components/Chat'
 import Achievements from './components/Achievements'
+import Auth from './components/Auth'
+import { isSupabaseConfigured, supabase } from './lib/supabase'
+import { loadCloudProgress, saveCloudProgress } from './lib/progress'
 
 const INITIAL_USER = {
   name: 'Öğrenci',
@@ -40,6 +43,22 @@ const INITIAL_USER = {
   ]
 }
 
+const STORAGE_KEY = 'polyglothub-progress-v1'
+
+const loadProgress = () => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY))
+    if (!saved?.user || !Array.isArray(saved.user.languages)) return null
+
+    return {
+      user: { ...INITIAL_USER, ...saved.user },
+      activeLanguageCode: saved.activeLanguageCode,
+    }
+  } catch {
+    return null
+  }
+}
+
 /* Learnable languages for selection */
 const ALL_LANGUAGES = [
   { code: 'en', name: 'İngilizce', flag: '🇬🇧', nativeName: 'English' },
@@ -55,10 +74,17 @@ const ALL_LANGUAGES = [
 ]
 
 export default function App() {
+  const [savedProgress] = useState(loadProgress)
   const [activeTab, setActiveTab] = useState('dashboard')
-  const [user, setUser] = useState(INITIAL_USER)
-  const [activeLanguage, setActiveLanguage] = useState(INITIAL_USER.languages[0])
+  const [user, setUser] = useState(() => savedProgress?.user ?? INITIAL_USER)
+  const [activeLanguage, setActiveLanguage] = useState(() => {
+    const languages = savedProgress?.user.languages ?? INITIAL_USER.languages
+    return languages.find(lang => lang.code === savedProgress?.activeLanguageCode) ?? languages[0] ?? INITIAL_USER.languages[0]
+  })
   const [notification, setNotification] = useState(null)
+  const [session, setSession] = useState(null)
+  const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
+  const [cloudProgressReady, setCloudProgressReady] = useState(!isSupabaseConfigured)
 
   const showNotif = useCallback((msg, type = 'success') => {
     setNotification({ msg, type })
@@ -89,6 +115,110 @@ export default function App() {
     document.title = 'PolyglotHub | Dil Öğrenme Platformu'
   }, [])
 
+  useEffect(() => {
+    if (!session?.user?.id) return
+
+    let active = true
+    const load = async () => {
+      try {
+        const cloud = await loadCloudProgress(session.user.id)
+        if (!active) return
+
+        if (!cloud.languages.length) {
+          await saveCloudProgress(session.user.id, user, activeLanguage?.code)
+        } else {
+          const languages = cloud.languages.map(row => {
+            const catalogLanguage = ALL_LANGUAGES.find(language => language.code === row.language_code)
+            return {
+              code: row.language_code,
+              name: catalogLanguage?.name ?? row.language_code.toUpperCase(),
+              flag: catalogLanguage?.flag ?? '🌐',
+              level: row.level,
+              progress: row.progress,
+              wordsLearned: row.words_learned,
+            }
+          })
+          const activeCode = cloud.languages.find(row => row.is_active)?.language_code
+          const nextUser = {
+            ...user,
+            name: cloud.profile.display_name,
+            totalXP: cloud.profile.total_xp,
+            streak: cloud.profile.streak,
+            weeklyGoal: cloud.profile.weekly_goal,
+            weeklyXP: cloud.profile.weekly_xp,
+            level: cloud.profile.level,
+            nextLevelXP: cloud.profile.next_level_xp,
+            languages,
+          }
+          setUser(nextUser)
+          setActiveLanguage(languages.find(language => language.code === activeCode) ?? languages[0])
+        }
+        setCloudProgressReady(true)
+      } catch (error) {
+        if (!active) return
+        showNotif(`İlerleme yüklenemedi: ${error.message}`, 'error')
+        setCloudProgressReady(true)
+      }
+    }
+
+    load()
+    return () => { active = false }
+    // Local progress is intentionally captured once when the signed-in account loads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user?.id, showNotif])
+
+  useEffect(() => {
+    if (!session?.user?.id || !cloudProgressReady) return
+
+    const timeout = setTimeout(() => {
+      saveCloudProgress(session.user.id, user, activeLanguage?.code).catch(error => {
+        showNotif(`İlerleme kaydedilemedi: ${error.message}`, 'error')
+      })
+    }, 500)
+
+    return () => clearTimeout(timeout)
+  }, [user, activeLanguage?.code, session?.user?.id, cloudProgressReady, showNotif])
+
+  useEffect(() => {
+    if (!supabase) return
+
+    let active = true
+    supabase.auth.getSession().then(({ data }) => {
+      if (active) {
+        setSession(data.session)
+        setAuthLoading(false)
+      }
+    })
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      setSession(nextSession)
+      setAuthLoading(false)
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') setCloudProgressReady(false)
+    })
+
+    return () => {
+      active = false
+      authListener.subscription.unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        user,
+        activeLanguageCode: activeLanguage?.code,
+      }))
+    } catch {
+      // The app remains usable when browser storage is unavailable.
+    }
+  }, [user, activeLanguage?.code])
+
+  if (authLoading || (session && !cloudProgressReady)) {
+    return <main style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: '#a78bfa' }}>PolyglotHub yükleniyor…</main>
+  }
+
+  if (isSupabaseConfigured && !session) return <Auth />
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Notification Toast */}
@@ -107,7 +237,7 @@ export default function App() {
         </div>
       )}
 
-      <Navbar activeTab={activeTab} setActiveTab={setActiveTab} user={user} />
+      <Navbar activeTab={activeTab} setActiveTab={setActiveTab} user={user} onSignOut={() => supabase?.auth.signOut()} />
 
       <main style={{ flex: 1, maxWidth: 1200, margin: '0 auto', width: '100%', padding: '24px 20px' }}>
         {activeTab === 'dashboard' && (
@@ -117,13 +247,13 @@ export default function App() {
           <Languages user={user} allLanguages={ALL_LANGUAGES} setActiveLanguage={lang => { setActiveLanguage(lang); setActiveTab('flashcards') }} addLanguage={addLanguage} removeLanguage={removeLanguage} showNotif={showNotif} />
         )}
         {activeTab === 'flashcards' && (
-          <FlashCards language={activeLanguage} userLanguages={user.languages} setActiveLanguage={setActiveLanguage} gainXP={gainXP} showNotif={showNotif} />
+          <FlashCards language={activeLanguage} gainXP={gainXP} />
         )}
         {activeTab === 'practice' && (
-          <Practice language={activeLanguage} userLanguages={user.languages} setActiveLanguage={setActiveLanguage} gainXP={gainXP} showNotif={showNotif} />
+          <Practice language={activeLanguage} gainXP={gainXP} />
         )}
         {activeTab === 'chat' && (
-          <Chat language={activeLanguage} userLanguages={user.languages} setActiveLanguage={setActiveLanguage} gainXP={gainXP} />
+          <Chat key={activeLanguage?.code} language={activeLanguage} userLanguages={user.languages} setActiveLanguage={setActiveLanguage} gainXP={gainXP} />
         )}
         {activeTab === 'achievements' && (
           <Achievements user={user} />

@@ -1,4 +1,4 @@
-import { BookOpen, BarChart2, Layers, Zap, Trophy, Globe, MessageCircle } from 'lucide-react'
+import { BookOpen, BarChart2, Layers, Zap, Trophy, Globe, MessageCircle, LogOut } from 'lucide-react'
 
 const tabs = [
   { id: 'dashboard',    label: 'Ana Sayfa',   icon: BarChart2 },
@@ -9,7 +9,7 @@ const tabs = [
   { id: 'achievements',label: 'Başarılar',    icon: Trophy },
 ]
 
-export default function Navbar({ activeTab, setActiveTab, user }) {
+export default function Navbar({ activeTab, setActiveTab, user, onSignOut }) {
   const levelPct = Math.round((user.totalXP / user.nextLevelXP) * 100)
 
   return (
@@ -76,6 +76,11 @@ export default function Navbar({ activeTab, setActiveTab, user }) {
             <span style={{ fontSize: 16 }}>🔥</span>
             <span style={{ fontWeight: 700, color: '#fcd34d', fontSize: 14 }}>{user.streak}</span>
           </div>
+          {onSignOut && (
+            <button onClick={onSignOut} className="btn-ghost" title="Çıkış yap" aria-label="Çıkış yap" style={{ padding: 8 }}>
+              <LogOut size={17} />
+            </button>
+          )}
         </div>
       </div>
 
