@@ -98,16 +98,8 @@ export default function Chat({ language, userLanguages, setActiveLanguage, gainX
   const [input, setInput] = useState('')
   const [isListening, setIsListening] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
-  const [msgCount, setMsgCount] = useState(0)
   const bottomRef = useRef(null)
   const recognitionRef = useRef(null)
-
-  /* Reset conversation when language changes */
-  useEffect(() => {
-    const newPersona = AI_PERSONAS[getLangCode(language?.code)] ?? AI_PERSONAS.en
-    setMessages([{ from: 'ai', text: newPersona.greeting, id: Date.now() }])
-    setMsgCount(0)
-  }, [language?.code])
 
   /* Auto-scroll */
   useEffect(() => {
@@ -166,7 +158,6 @@ export default function Chat({ language, userLanguages, setActiveLanguage, gainX
       const aiMsg = { from: 'ai', text: reply, id: Date.now() + 1 }
       setMessages(prev => [...prev, aiMsg])
       speak(reply)
-      setMsgCount(c => c + 1)
     }, 700 + Math.random() * 600)
   }
 
@@ -175,7 +166,6 @@ export default function Chat({ language, userLanguages, setActiveLanguage, gainX
   const reset = () => {
     window.speechSynthesis?.cancel()
     setMessages([{ from: 'ai', text: persona.greeting, id: Date.now() }])
-    setMsgCount(0)
     setInput('')
   }
 

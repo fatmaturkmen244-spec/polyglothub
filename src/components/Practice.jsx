@@ -23,7 +23,7 @@ const DEFAULT_QUIZ = [
   { question: '"World" kelimesinin anlamı?', options: ['Kelime', 'Dünya', 'Ev', 'Ülke'], answer: 1 },
 ]
 
-export default function Practice({ language, gainXP, showNotif }) {
+export default function Practice({ language, gainXP }) {
   const quiz = QUIZZES[language?.code] ?? DEFAULT_QUIZ
   const [qIndex, setQIndex] = useState(0)
   const [selected, setSelected] = useState(null)

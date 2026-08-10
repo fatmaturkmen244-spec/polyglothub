@@ -150,7 +150,7 @@ export default function Dashboard({ user, gainXP, setActiveTab }) {
           </button>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {user.languages.map((lang, i) => (
+          {user.languages.map((lang) => (
             <div key={lang.code} className="glass-card" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
               <span style={{ fontSize: 32 }}>{lang.flag}</span>
               <div style={{ flex: 1, minWidth: 0 }}>

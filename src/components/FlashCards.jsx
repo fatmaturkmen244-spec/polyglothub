@@ -28,7 +28,7 @@ const DEFAULT_WORDS = [
   { word: 'World', meaning: 'Dünya', example: 'Hello, World!' },
 ]
 
-export default function FlashCards({ language, gainXP, showNotif }) {
+export default function FlashCards({ language, gainXP }) {
   const words = WORDS[language?.code] ?? DEFAULT_WORDS
   const [index, setIndex] = useState(0)
   const [flipped, setFlipped] = useState(false)
