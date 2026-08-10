@@ -7,6 +7,9 @@ import FlashCards from './components/FlashCards'
 import Practice from './components/Practice'
 import Chat from './components/Chat'
 import Achievements from './components/Achievements'
+import DocumentStudio from './components/DocumentStudio'
+import VocabularyCoach from './components/VocabularyCoach'
+import LearningSettings from './components/LearningSettings'
 import Auth from './components/Auth'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { loadCloudProgress, saveCloudProgress } from './lib/progress'
@@ -85,6 +88,17 @@ export default function App() {
   const [session, setSession] = useState(null)
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
   const [cloudProgressReady, setCloudProgressReady] = useState(!isSupabaseConfigured)
+  const [theme, setTheme] = useState(() => localStorage.getItem('polyglothub-theme') || 'dark')
+  const [learningSettings, setLearningSettings] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('polyglothub-learning-settings')) || { algorithm: 'sm2', dailyGoal: 25 } } catch { return { algorithm: 'sm2', dailyGoal: 25 } }
+  })
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem('polyglothub-theme', theme)
+  }, [theme])
+
+  useEffect(() => { localStorage.setItem('polyglothub-learning-settings', JSON.stringify(learningSettings)) }, [learningSettings])
 
   const showNotif = useCallback((msg, type = 'success') => {
     setNotification({ msg, type })
@@ -109,6 +123,11 @@ export default function App() {
     setUser(prev => ({ ...prev, languages: prev.languages.filter(l => l.code !== code) }))
     setActiveLanguage(prev => prev?.code === code ? INITIAL_USER.languages[0] : prev)
     showNotif('Dil listenizden kaldırıldı', 'error')
+  }, [showNotif])
+
+  const resetLanguageProgress = useCallback((code) => {
+    setUser(prev => ({ ...prev, languages: prev.languages.map(language => language.code === code ? { ...language, level: 'A1', progress: 0, wordsLearned: 0 } : language) }))
+    showNotif('Dil ilerlemesi sıfırlandı')
   }, [showNotif])
 
   useEffect(() => {
@@ -220,7 +239,7 @@ export default function App() {
   if (isSupabaseConfigured && !session) return <Auth />
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div className="app-shell">
       {/* Notification Toast */}
       {notification && (
         <div style={{
@@ -237,17 +256,17 @@ export default function App() {
         </div>
       )}
 
-      <Navbar activeTab={activeTab} setActiveTab={setActiveTab} user={user} onSignOut={() => supabase?.auth.signOut()} />
+      <Navbar activeTab={activeTab} setActiveTab={setActiveTab} user={user} theme={theme} setTheme={setTheme} onSignOut={() => supabase?.auth.signOut()} />
 
-      <main style={{ flex: 1, maxWidth: 1200, margin: '0 auto', width: '100%', padding: '24px 20px' }}>
+      <main className="app-content">
         {activeTab === 'dashboard' && (
           <Dashboard user={user} gainXP={gainXP} setActiveTab={setActiveTab} />
         )}
         {activeTab === 'languages' && (
-          <Languages user={user} allLanguages={ALL_LANGUAGES} setActiveLanguage={lang => { setActiveLanguage(lang); setActiveTab('flashcards') }} addLanguage={addLanguage} removeLanguage={removeLanguage} showNotif={showNotif} />
+          <Languages user={user} allLanguages={ALL_LANGUAGES} setActiveLanguage={lang => { setActiveLanguage(lang); setActiveTab('flashcards') }} addLanguage={addLanguage} removeLanguage={removeLanguage} resetLanguageProgress={resetLanguageProgress} showNotif={showNotif} />
         )}
         {activeTab === 'flashcards' && (
-          <FlashCards language={activeLanguage} gainXP={gainXP} />
+          <FlashCards language={activeLanguage} gainXP={gainXP} learningSettings={learningSettings} />
         )}
         {activeTab === 'practice' && (
           <Practice language={activeLanguage} gainXP={gainXP} />
@@ -258,6 +277,9 @@ export default function App() {
         {activeTab === 'achievements' && (
           <Achievements user={user} />
         )}
+        {activeTab === 'documents' && <DocumentStudio />}
+        {activeTab === 'vocabulary' && <VocabularyCoach language={activeLanguage} dailyGoal={learningSettings.dailyGoal} />}
+        {activeTab === 'settings' && <LearningSettings settings={learningSettings} setSettings={setLearningSettings} />}
       </main>
     </div>
   )

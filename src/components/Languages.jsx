@@ -1,4 +1,4 @@
-import { ChevronRight, PlusCircle, Trash2, BookOpen } from 'lucide-react'
+import { PlusCircle, Trash2, BookOpen, RotateCcw } from 'lucide-react'
 import { useState } from 'react'
 
 const LEVEL_COLORS = {
@@ -6,8 +6,9 @@ const LEVEL_COLORS = {
   B2: '#ec4899', C1: '#f59e0b', C2: '#ef4444'
 }
 
-export default function Languages({ user, allLanguages, setActiveLanguage, addLanguage, removeLanguage, showNotif }) {
+export default function Languages({ user, allLanguages, setActiveLanguage, addLanguage, removeLanguage, resetLanguageProgress, showNotif }) {
   const [confirmRemove, setConfirmRemove] = useState(null)
+  const [confirmReset, setConfirmReset] = useState(null)
   const activeCodes = user.languages.map(l => l.code)
 
   const handleAdd = (lang) => {
@@ -76,6 +77,19 @@ export default function Languages({ user, allLanguages, setActiveLanguage, addLa
                       style={{ padding: '8px 14px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 5 }}>
                       <BookOpen size={14} /> Çalış
                     </button>
+                    {confirmReset === lang.code ? (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => { resetLanguageProgress(lang.code); setConfirmReset(null) }}
+                          style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(245,158,11,0.5)', background: 'rgba(245,158,11,0.15)', color: '#fcd34d', cursor: 'pointer', fontWeight: 600, fontSize: 12 }}>
+                          Sıfırla
+                        </button>
+                        <button onClick={() => setConfirmReset(null)} className="btn-ghost" style={{ padding: '8px 10px', fontSize: 12 }}>İptal</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setConfirmReset(lang.code)} className="btn-ghost" style={{ padding: '8px 10px' }} title="İlerlemeyi sıfırla" aria-label={`${lang.name} ilerlemesini sıfırla`}>
+                        <RotateCcw size={15} />
+                      </button>
+                    )}
                     {confirmRemove === lang.code ? (
                       <div style={{ display: 'flex', gap: 6 }}>
                         <button onClick={() => { removeLanguage(lang.code); setConfirmRemove(null) }}

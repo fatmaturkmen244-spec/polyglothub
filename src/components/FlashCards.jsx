@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Plus, CheckCircle, XCircle } from 'lucide-react'
+import { scheduleReview } from '../lib/spacedRepetition'
 
 const WORDS = {
   en: [
@@ -28,7 +29,7 @@ const DEFAULT_WORDS = [
   { word: 'World', meaning: 'Dünya', example: 'Hello, World!' },
 ]
 
-export default function FlashCards({ language, gainXP }) {
+export default function FlashCards({ language, gainXP, learningSettings }) {
   const words = WORDS[language?.code] ?? DEFAULT_WORDS
   const [index, setIndex] = useState(0)
   const [flipped, setFlipped] = useState(false)
@@ -38,6 +39,11 @@ export default function FlashCards({ language, gainXP }) {
   const current = words[index]
 
   const answer = (correct) => {
+    const reviewKey = `polyglothub-review-${language?.code}-${current.word}`
+    try {
+      const previous = JSON.parse(localStorage.getItem(reviewKey) || '{}')
+      localStorage.setItem(reviewKey, JSON.stringify(scheduleReview(previous, correct, learningSettings?.algorithm)))
+    } catch { /* Review scheduling remains optional when storage is unavailable. */ }
     setResults(prev => [...prev, correct])
     gainXP(correct ? 15 : 5)
     if (index + 1 >= words.length) {
