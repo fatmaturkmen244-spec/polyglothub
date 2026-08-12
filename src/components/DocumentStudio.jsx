@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { FileText, Languages, Sparkles, UploadCloud, Download } from 'lucide-react'
 
-const TARGET_LANGUAGES = ['İngilizce', 'Almanca', 'Fransızca', 'İspanyolca', 'İtalyanca', 'Portekizce', 'Arapça', 'Japonca']
+const TARGET_LANGUAGES = ['Türkçe', 'İngilizce', 'Almanca', 'Fransızca', 'İspanyolca', 'İtalyanca', 'Portekizce', 'Arapça', 'Japonca', 'Rusça', 'Çince']
 const toBase64 = file => new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result.split(',')[1]); reader.onerror = reject; reader.readAsDataURL(file) })
 
 export default function DocumentStudio() {
-  const [file, setFile] = useState(null), [targetLanguage, setTargetLanguage] = useState('İngilizce'), [mode, setMode] = useState('analyze')
+  const [file, setFile] = useState(null), [targetLanguage, setTargetLanguage] = useState('Türkçe'), [mode, setMode] = useState('analyze')
   const [loading, setLoading] = useState(false), [error, setError] = useState(''), [result, setResult] = useState(null)
   const pickFile = selected => { setError(''); setResult(null); if (!selected) return; if (selected.type !== 'application/pdf') return setError('Lütfen PDF biçiminde bir dosya seçin.'); if (selected.size > 4 * 1024 * 1024) return setError('İlk sürümde PDF boyutu en fazla 4 MB olabilir.'); setFile(selected) }
   const processDocument = async () => { if (!file) return setError('Önce bir PDF seçin.'); setLoading(true); setError(''); try { const response = await fetch('/api/document-analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fileName: file.name, fileBase64: await toBase64(file), mode, targetLanguage }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Belge işlenemedi.'); setResult(data) } catch (requestError) { setError(requestError.message) } finally { setLoading(false) } }
