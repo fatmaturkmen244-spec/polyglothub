@@ -26,22 +26,35 @@ export default function Chat({ language, userLanguages, setActiveLanguage, gainX
   const [input, setInput] = useState('')
   const [isListening, setIsListening] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
+  const [isPreparingVoice, setIsPreparingVoice] = useState(false)
   const [isThinking, setIsThinking] = useState(false)
   const [speechRate, setSpeechRate] = useState(0.72)
+  const [voiceStyle, setVoiceStyle] = useState('Aoede')
   const [error, setError] = useState('')
   const recognitionRef = useRef(null)
+  const audioRef = useRef(null)
+  const audioUrlRef = useRef(null)
   const bottomRef = useRef(null)
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, isThinking])
-  useEffect(() => () => window.speechSynthesis?.cancel(), [])
+  useEffect(() => () => {
+    window.speechSynthesis?.cancel()
+    audioRef.current?.pause()
+    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
+  }, [])
 
   const stopSpeaking = () => {
     window.speechSynthesis?.cancel()
+    audioRef.current?.pause()
+    audioRef.current = null
+    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
+    audioUrlRef.current = null
     setIsSpeaking(false)
+    setIsPreparingVoice(false)
   }
 
-  const speak = text => {
-    if (!window.speechSynthesis || !text) return setError('Sesli okuma bu tarayıcıda desteklenmiyor.')
+  const browserFallback = text => {
+    if (!window.speechSynthesis) throw new Error('Sesli okuma bu tarayıcıda desteklenmiyor.')
     stopSpeaking()
     const utterance = new SpeechSynthesisUtterance(text)
     const locale = TTS_LANGS[language?.code] || 'en-US'
@@ -56,6 +69,39 @@ export default function Chat({ language, userLanguages, setActiveLanguage, gainX
     utterance.onend = () => setIsSpeaking(false)
     utterance.onerror = () => setIsSpeaking(false)
     window.speechSynthesis.speak(utterance)
+  }
+
+  const speak = async text => {
+    if (!text || isPreparingVoice) return
+    stopSpeaking()
+    setError('')
+    setIsPreparingVoice(true)
+    try {
+      const response = await fetch('/api/speech', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, language: language?.name, pace: speechRate === 0.72 ? 'slow' : 'normal', voice: voiceStyle }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Doğal ses üretilemedi.')
+      const bytes = Uint8Array.from(atob(data.audioBase64), character => character.charCodeAt(0))
+      const url = URL.createObjectURL(new Blob([bytes], { type: data.mimeType || 'audio/wav' }))
+      const audio = new Audio(url)
+      audioRef.current = audio
+      audioUrlRef.current = url
+      audio.onplay = () => { setIsPreparingVoice(false); setIsSpeaking(true) }
+      audio.onended = stopSpeaking
+      audio.onerror = () => { stopSpeaking(); setError('Oluşturulan ses oynatılamadı.') }
+      await audio.play()
+    } catch (requestError) {
+      setIsPreparingVoice(false)
+      try {
+        browserFallback(text)
+        setError('Doğal ses geçici olarak kullanılamadı; cihaz sesiyle okundu.')
+      } catch {
+        setError(requestError.message)
+      }
+    }
   }
 
   const startListening = () => {
@@ -107,7 +153,8 @@ export default function Chat({ language, userLanguages, setActiveLanguage, gainX
   return <section className="voice-chat animate-fade-in">
     <header className="voice-header"><div><span className="studio-kicker"><Bot size={14} /> GEMINI KONUŞMA KOÇU</span><h1>{language?.flag} {language?.name} sesli pratik</h1><p>{language?.level} seviyene uygun kısa yanıtlar, Türkçe anlam ve anlaşılır seslendirme.</p></div><button onClick={reset} className="btn-ghost"><RotateCcw size={15} /> Yeni sohbet</button></header>
     <LangBar userLanguages={userLanguages} activeLanguage={language} setActiveLanguage={setActiveLanguage} />
-    <div className="speech-controls"><span>Konuşma hızı</span><button className={speechRate === 0.72 ? 'active' : ''} onClick={() => setSpeechRate(0.72)}>Yavaş</button><button className={speechRate === 0.9 ? 'active' : ''} onClick={() => setSpeechRate(0.9)}>Normal</button></div>
+    <div className="speech-controls"><span>Konuşma hızı</span><button className={speechRate === 0.72 ? 'active' : ''} onClick={() => setSpeechRate(0.72)}>Yavaş</button><button className={speechRate === 0.9 ? 'active' : ''} onClick={() => setSpeechRate(0.9)}>Normal</button><label>Koçun sesi<select value={voiceStyle} onChange={event => setVoiceStyle(event.target.value)}><option value="Aoede">Yumuşak</option><option value="Kore">Net</option></select></label></div>
+    {isPreparingVoice && <div className="voice-status"><Volume2 size={15} /> Doğal ses hazırlanıyor…</div>}
     {isSpeaking && <div className="voice-status"><Volume2 size={15} /> Koç yalnızca yabancı dildeki yanıtı okuyor.<button onClick={stopSpeaking}><VolumeX size={14} /> Durdur</button></div>}
     {error && <p className="studio-error voice-error">{error}</p>}
     <div className="message-stream">{messages.map(message => <div key={message.id} className={`message-row ${message.from}`}><div className="message-avatar">{message.from === 'ai' ? <Bot size={17} /> : <User size={17} />}</div><div className="message-bubble"><div>{message.text}</div>{message.from === 'ai' && message.translation && <div className="message-translation"><strong>Türkçesi:</strong> {message.translation}</div>}{message.from === 'ai' && message.correction && <div className="message-correction"><strong>Küçük düzeltme:</strong> {message.correction}</div>}{message.from === 'ai' && <button onClick={() => speak(message.text)} aria-label="Yabancı dildeki yanıtı sesli oku"><Volume2 size={14} /></button>}</div></div>)}{isThinking && <div className="message-row ai"><div className="message-avatar"><Bot size={17} /></div><div className="message-bubble thinking">Kısa bir yanıt hazırlanıyor…</div></div>}<div ref={bottomRef} /></div>
