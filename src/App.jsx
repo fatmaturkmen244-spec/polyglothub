@@ -35,9 +35,20 @@ const loadProgress = () => {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY))
     if (!saved?.user || !Array.isArray(saved.user.languages)) return null
+    const activityLog = Array.isArray(saved.user.activityLog) ? saved.user.activityLog : []
+    const activity = summarizeActivity(activityLog)
 
     return {
-      user: { ...INITIAL_USER, ...saved.user, activityLog: Array.isArray(saved.user.activityLog) ? saved.user.activityLog : [] },
+      user: {
+        ...INITIAL_USER,
+        ...saved.user,
+        activityLog,
+        totalXP: activity.totalXP,
+        weeklyXP: activity.weeklyXP,
+        streak: activity.streak,
+        level: Math.floor(activity.totalXP / 500) + 1,
+        nextLevelXP: (Math.floor(activity.totalXP / 500) + 1) * 500,
+      },
       activeLanguageCode: saved.activeLanguageCode,
     }
   } catch {
