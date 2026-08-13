@@ -134,7 +134,7 @@ export default function Chat({ language, userLanguages, setActiveLanguage, gainX
       if (!response.ok) throw new Error(data.error || 'Bot yanıt veremedi.')
       const aiMessage = { from: 'ai', text: data.reply, translation: data.translation, correction: data.correction, id: Date.now() + 1 }
       setMessages(current => [...current, aiMessage])
-      gainXP(5)
+      gainXP(5, { kind: 'chat', languageCode: language?.code })
       speak(data.reply)
     } catch (requestError) {
       setError(requestError.message)

@@ -12,38 +12,23 @@ import VocabularyCoach from './components/VocabularyCoach'
 import LearningSettings from './components/LearningSettings'
 import Auth from './components/Auth'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
-import { loadCloudProgress, saveCloudProgress } from './lib/progress'
+import { loadCloudProgress, recordCloudActivity, saveCloudProgress } from './lib/progress'
+import { cloudResultsToActivity, summarizeActivity } from './lib/activity'
 
 const INITIAL_USER = {
   name: 'Öğrenci',
-  streak: 14,
-  totalXP: 2480,
+  streak: 0,
+  totalXP: 0,
   weeklyGoal: 300,
-  weeklyXP: 175,
-  level: 8,
-  nextLevelXP: 3000,
+  weeklyXP: 0,
+  level: 1,
+  nextLevelXP: 500,
+  activityLog: [],
   languages: [
     { code: 'en', name: 'İngilizce', flag: '🇬🇧', level: 'B2', progress: 72, wordsLearned: 1240 },
     { code: 'es', name: 'İspanyolca', flag: '🇪🇸', level: 'A2', progress: 38, wordsLearned: 410 },
     { code: 'ja', name: 'Japonca', flag: '🇯🇵', level: 'A1', progress: 15, wordsLearned: 120 },
   ],
-  weeklyData: [
-    { day: 'Pzt', xp: 45, words: 12 },
-    { day: 'Sal', xp: 30, words: 8 },
-    { day: 'Çar', xp: 60, words: 18 },
-    { day: 'Per', xp: 0,  words: 0  },
-    { day: 'Cum', xp: 40, words: 11 },
-    { day: 'Cmt', xp: 0,  words: 0  },
-    { day: 'Paz', xp: 0,  words: 0  },
-  ],
-  badges: [
-    { id: 1, emoji: '🔥', name: 'Ateş Yakan', desc: '7 günlük seri', earned: true },
-    { id: 2, emoji: '⭐', name: 'Yıldız', desc: '1000 XP kazandı', earned: true },
-    { id: 3, emoji: '📚', name: 'Kitap kurdu', desc: '500 kelime öğrendi', earned: true },
-    { id: 4, emoji: '🏆', name: 'Şampiyon', desc: '30 günlük seri', earned: false },
-    { id: 5, emoji: '🌍', name: 'Gezgin', desc: '3 dil öğrendi', earned: false },
-    { id: 6, emoji: '💎', name: 'Elmas', desc: '5000 XP kazandı', earned: false },
-  ]
 }
 
 const STORAGE_KEY = 'polyglothub-progress-v1'
@@ -54,7 +39,7 @@ const loadProgress = () => {
     if (!saved?.user || !Array.isArray(saved.user.languages)) return null
 
     return {
-      user: { ...INITIAL_USER, ...saved.user },
+      user: { ...INITIAL_USER, ...saved.user, activityLog: Array.isArray(saved.user.activityLog) ? saved.user.activityLog : [] },
       activeLanguageCode: saved.activeLanguageCode,
     }
   } catch {
@@ -105,10 +90,17 @@ export default function App() {
     setTimeout(() => setNotification(null), 3500)
   }, [])
 
-  const gainXP = useCallback((xp) => {
-    setUser(prev => ({ ...prev, totalXP: prev.totalXP + xp, weeklyXP: prev.weeklyXP + xp }))
+  const gainXP = useCallback((xp, details = {}) => {
+    const event = { id: crypto.randomUUID(), at: new Date().toISOString(), xp, words: details.words || 0, kind: details.kind || 'quiz', languageCode: details.languageCode || activeLanguage?.code, score: details.score, total: details.total }
+    setUser(prev => {
+      const activityLog = [...(prev.activityLog || []), event]
+      const summary = summarizeActivity(activityLog)
+      const languages = event.words > 0 ? prev.languages.map(item => item.code === event.languageCode ? { ...item, wordsLearned: item.wordsLearned + event.words } : item) : prev.languages
+      return { ...prev, activityLog, languages, totalXP: summary.totalXP, weeklyXP: summary.weeklyXP, streak: summary.streak, level: Math.floor(summary.totalXP / 500) + 1, nextLevelXP: (Math.floor(summary.totalXP / 500) + 1) * 500 }
+    })
+    if (session?.user?.id) recordCloudActivity(session.user.id, event).catch(error => showNotif(`Etkinlik kaydedilemedi: ${error.message}`, 'error'))
     showNotif(`+${xp} XP kazandınız! 🎉`)
-  }, [showNotif])
+  }, [activeLanguage?.code, session?.user?.id, showNotif])
 
   const addLanguage = useCallback((lang) => {
     setUser(prev => {
@@ -158,15 +150,18 @@ export default function App() {
             }
           })
           const activeCode = cloud.languages.find(row => row.is_active)?.language_code
+          const activityLog = cloudResultsToActivity(cloud.practiceResults)
+          const activity = summarizeActivity(activityLog)
           const nextUser = {
             ...user,
             name: cloud.profile.display_name,
-            totalXP: cloud.profile.total_xp,
-            streak: cloud.profile.streak,
+            totalXP: activity.totalXP,
+            streak: activity.streak,
             weeklyGoal: cloud.profile.weekly_goal,
-            weeklyXP: cloud.profile.weekly_xp,
-            level: cloud.profile.level,
-            nextLevelXP: cloud.profile.next_level_xp,
+            weeklyXP: activity.weeklyXP,
+            level: Math.floor(activity.totalXP / 500) + 1,
+            nextLevelXP: (Math.floor(activity.totalXP / 500) + 1) * 500,
+            activityLog,
             languages,
           }
           setUser(nextUser)
@@ -260,7 +255,7 @@ export default function App() {
 
       <main className="app-content">
         {activeTab === 'dashboard' && (
-          <Dashboard user={user} gainXP={gainXP} setActiveTab={setActiveTab} />
+          <Dashboard user={user} setActiveTab={setActiveTab} />
         )}
         {activeTab === 'languages' && (
           <Languages user={user} allLanguages={ALL_LANGUAGES} setActiveLanguage={lang => { setActiveLanguage(lang); setActiveTab('flashcards') }} addLanguage={addLanguage} removeLanguage={removeLanguage} resetLanguageProgress={resetLanguageProgress} showNotif={showNotif} />
@@ -278,7 +273,7 @@ export default function App() {
           <Achievements user={user} />
         )}
         {activeTab === 'documents' && <DocumentStudio />}
-        {activeTab === 'vocabulary' && <VocabularyCoach language={activeLanguage} dailyGoal={learningSettings.dailyGoal} />}
+        {activeTab === 'vocabulary' && <VocabularyCoach language={activeLanguage} dailyGoal={learningSettings.dailyGoal} gainXP={gainXP} />}
         {activeTab === 'settings' && <LearningSettings settings={learningSettings} setSettings={setLearningSettings} />}
       </main>
     </div>
