@@ -25,9 +25,7 @@ const INITIAL_USER = {
   nextLevelXP: 500,
   activityLog: [],
   languages: [
-    { code: 'en', name: 'İngilizce', flag: '🇬🇧', level: 'B2', progress: 72, wordsLearned: 1240 },
-    { code: 'es', name: 'İspanyolca', flag: '🇪🇸', level: 'A2', progress: 38, wordsLearned: 410 },
-    { code: 'ja', name: 'Japonca', flag: '🇯🇵', level: 'A1', progress: 15, wordsLearned: 120 },
+    { code: 'en', name: 'İngilizce', flag: '🇬🇧', level: 'A1', progress: 0, wordsLearned: 0 },
   ],
 }
 
@@ -134,9 +132,21 @@ export default function App() {
       try {
         const cloud = await loadCloudProgress(session.user.id)
         if (!active) return
+        const activityLog = cloudResultsToActivity(cloud.practiceResults)
+        const activity = summarizeActivity(activityLog)
+        const activityFields = {
+          totalXP: activity.totalXP,
+          streak: activity.streak,
+          weeklyXP: activity.weeklyXP,
+          level: Math.floor(activity.totalXP / 500) + 1,
+          nextLevelXP: (Math.floor(activity.totalXP / 500) + 1) * 500,
+          activityLog,
+        }
 
         if (!cloud.languages.length) {
-          await saveCloudProgress(session.user.id, user, activeLanguage?.code)
+          const normalizedUser = { ...user, ...activityFields, name: cloud.profile.display_name, weeklyGoal: cloud.profile.weekly_goal }
+          setUser(normalizedUser)
+          await saveCloudProgress(session.user.id, normalizedUser, activeLanguage?.code)
         } else {
           const languages = cloud.languages.map(row => {
             const catalogLanguage = ALL_LANGUAGES.find(language => language.code === row.language_code)
@@ -150,18 +160,11 @@ export default function App() {
             }
           })
           const activeCode = cloud.languages.find(row => row.is_active)?.language_code
-          const activityLog = cloudResultsToActivity(cloud.practiceResults)
-          const activity = summarizeActivity(activityLog)
           const nextUser = {
             ...user,
             name: cloud.profile.display_name,
-            totalXP: activity.totalXP,
-            streak: activity.streak,
             weeklyGoal: cloud.profile.weekly_goal,
-            weeklyXP: activity.weeklyXP,
-            level: Math.floor(activity.totalXP / 500) + 1,
-            nextLevelXP: (Math.floor(activity.totalXP / 500) + 1) * 500,
-            activityLog,
+            ...activityFields,
             languages,
           }
           setUser(nextUser)
