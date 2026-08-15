@@ -36,7 +36,7 @@ export default function Practice({ language, gainXP }) {
     if (selected !== null) return
     setSelected(i)
     const correct = i === current.answer
-    if (correct) { setScore(s => s + 1); gainXP(20) }
+    if (correct) { setScore(s => s + 1); gainXP(20, { kind: 'quiz', languageCode: language?.code, score: 1, total: 1 }) }
 
     setTimeout(() => {
       if (qIndex + 1 >= quiz.length) {

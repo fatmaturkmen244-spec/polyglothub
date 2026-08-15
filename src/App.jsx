@@ -7,40 +7,26 @@ import FlashCards from './components/FlashCards'
 import Practice from './components/Practice'
 import Chat from './components/Chat'
 import Achievements from './components/Achievements'
+import DocumentStudio from './components/DocumentStudio'
+import VocabularyCoach from './components/VocabularyCoach'
+import LearningSettings from './components/LearningSettings'
 import Auth from './components/Auth'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
-import { loadCloudProgress, saveCloudProgress } from './lib/progress'
+import { loadCloudProgress, recordCloudActivity, saveCloudProgress } from './lib/progress'
+import { cloudResultsToActivity, summarizeActivity } from './lib/activity'
 
 const INITIAL_USER = {
   name: 'Öğrenci',
-  streak: 14,
-  totalXP: 2480,
+  streak: 0,
+  totalXP: 0,
   weeklyGoal: 300,
-  weeklyXP: 175,
-  level: 8,
-  nextLevelXP: 3000,
+  weeklyXP: 0,
+  level: 1,
+  nextLevelXP: 500,
+  activityLog: [],
   languages: [
-    { code: 'en', name: 'İngilizce', flag: '🇬🇧', level: 'B2', progress: 72, wordsLearned: 1240 },
-    { code: 'es', name: 'İspanyolca', flag: '🇪🇸', level: 'A2', progress: 38, wordsLearned: 410 },
-    { code: 'ja', name: 'Japonca', flag: '🇯🇵', level: 'A1', progress: 15, wordsLearned: 120 },
+    { code: 'en', name: 'İngilizce', flag: '🇬🇧', level: 'A1', progress: 0, wordsLearned: 0 },
   ],
-  weeklyData: [
-    { day: 'Pzt', xp: 45, words: 12 },
-    { day: 'Sal', xp: 30, words: 8 },
-    { day: 'Çar', xp: 60, words: 18 },
-    { day: 'Per', xp: 0,  words: 0  },
-    { day: 'Cum', xp: 40, words: 11 },
-    { day: 'Cmt', xp: 0,  words: 0  },
-    { day: 'Paz', xp: 0,  words: 0  },
-  ],
-  badges: [
-    { id: 1, emoji: '🔥', name: 'Ateş Yakan', desc: '7 günlük seri', earned: true },
-    { id: 2, emoji: '⭐', name: 'Yıldız', desc: '1000 XP kazandı', earned: true },
-    { id: 3, emoji: '📚', name: 'Kitap kurdu', desc: '500 kelime öğrendi', earned: true },
-    { id: 4, emoji: '🏆', name: 'Şampiyon', desc: '30 günlük seri', earned: false },
-    { id: 5, emoji: '🌍', name: 'Gezgin', desc: '3 dil öğrendi', earned: false },
-    { id: 6, emoji: '💎', name: 'Elmas', desc: '5000 XP kazandı', earned: false },
-  ]
 }
 
 const STORAGE_KEY = 'polyglothub-progress-v1'
@@ -49,9 +35,20 @@ const loadProgress = () => {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY))
     if (!saved?.user || !Array.isArray(saved.user.languages)) return null
+    const activityLog = Array.isArray(saved.user.activityLog) ? saved.user.activityLog : []
+    const activity = summarizeActivity(activityLog)
 
     return {
-      user: { ...INITIAL_USER, ...saved.user },
+      user: {
+        ...INITIAL_USER,
+        ...saved.user,
+        activityLog,
+        totalXP: activity.totalXP,
+        weeklyXP: activity.weeklyXP,
+        streak: activity.streak,
+        level: Math.floor(activity.totalXP / 500) + 1,
+        nextLevelXP: (Math.floor(activity.totalXP / 500) + 1) * 500,
+      },
       activeLanguageCode: saved.activeLanguageCode,
     }
   } catch {
@@ -85,16 +82,34 @@ export default function App() {
   const [session, setSession] = useState(null)
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
   const [cloudProgressReady, setCloudProgressReady] = useState(!isSupabaseConfigured)
+  const [theme, setTheme] = useState(() => localStorage.getItem('polyglothub-theme') || 'dark')
+  const [learningSettings, setLearningSettings] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('polyglothub-learning-settings')) || { algorithm: 'sm2', dailyGoal: 25 } } catch { return { algorithm: 'sm2', dailyGoal: 25 } }
+  })
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem('polyglothub-theme', theme)
+  }, [theme])
+
+  useEffect(() => { localStorage.setItem('polyglothub-learning-settings', JSON.stringify(learningSettings)) }, [learningSettings])
 
   const showNotif = useCallback((msg, type = 'success') => {
     setNotification({ msg, type })
     setTimeout(() => setNotification(null), 3500)
   }, [])
 
-  const gainXP = useCallback((xp) => {
-    setUser(prev => ({ ...prev, totalXP: prev.totalXP + xp, weeklyXP: prev.weeklyXP + xp }))
+  const gainXP = useCallback((xp, details = {}) => {
+    const event = { id: crypto.randomUUID(), at: new Date().toISOString(), xp, words: details.words || 0, kind: details.kind || 'quiz', languageCode: details.languageCode || activeLanguage?.code, score: details.score, total: details.total }
+    setUser(prev => {
+      const activityLog = [...(prev.activityLog || []), event]
+      const summary = summarizeActivity(activityLog)
+      const languages = event.words > 0 ? prev.languages.map(item => item.code === event.languageCode ? { ...item, wordsLearned: item.wordsLearned + event.words } : item) : prev.languages
+      return { ...prev, activityLog, languages, totalXP: summary.totalXP, weeklyXP: summary.weeklyXP, streak: summary.streak, level: Math.floor(summary.totalXP / 500) + 1, nextLevelXP: (Math.floor(summary.totalXP / 500) + 1) * 500 }
+    })
+    if (session?.user?.id) recordCloudActivity(session.user.id, event).catch(error => showNotif(`Etkinlik kaydedilemedi: ${error.message}`, 'error'))
     showNotif(`+${xp} XP kazandınız! 🎉`)
-  }, [showNotif])
+  }, [activeLanguage?.code, session?.user?.id, showNotif])
 
   const addLanguage = useCallback((lang) => {
     setUser(prev => {
@@ -111,6 +126,11 @@ export default function App() {
     showNotif('Dil listenizden kaldırıldı', 'error')
   }, [showNotif])
 
+  const resetLanguageProgress = useCallback((code) => {
+    setUser(prev => ({ ...prev, languages: prev.languages.map(language => language.code === code ? { ...language, level: 'A1', progress: 0, wordsLearned: 0 } : language) }))
+    showNotif('Dil ilerlemesi sıfırlandı')
+  }, [showNotif])
+
   useEffect(() => {
     document.title = 'PolyglotHub | Dil Öğrenme Platformu'
   }, [])
@@ -123,9 +143,21 @@ export default function App() {
       try {
         const cloud = await loadCloudProgress(session.user.id)
         if (!active) return
+        const activityLog = cloudResultsToActivity(cloud.practiceResults)
+        const activity = summarizeActivity(activityLog)
+        const activityFields = {
+          totalXP: activity.totalXP,
+          streak: activity.streak,
+          weeklyXP: activity.weeklyXP,
+          level: Math.floor(activity.totalXP / 500) + 1,
+          nextLevelXP: (Math.floor(activity.totalXP / 500) + 1) * 500,
+          activityLog,
+        }
 
         if (!cloud.languages.length) {
-          await saveCloudProgress(session.user.id, user, activeLanguage?.code)
+          const normalizedUser = { ...user, ...activityFields, name: cloud.profile.display_name, weeklyGoal: cloud.profile.weekly_goal }
+          setUser(normalizedUser)
+          await saveCloudProgress(session.user.id, normalizedUser, activeLanguage?.code)
         } else {
           const languages = cloud.languages.map(row => {
             const catalogLanguage = ALL_LANGUAGES.find(language => language.code === row.language_code)
@@ -142,12 +174,8 @@ export default function App() {
           const nextUser = {
             ...user,
             name: cloud.profile.display_name,
-            totalXP: cloud.profile.total_xp,
-            streak: cloud.profile.streak,
             weeklyGoal: cloud.profile.weekly_goal,
-            weeklyXP: cloud.profile.weekly_xp,
-            level: cloud.profile.level,
-            nextLevelXP: cloud.profile.next_level_xp,
+            ...activityFields,
             languages,
           }
           setUser(nextUser)
@@ -220,7 +248,7 @@ export default function App() {
   if (isSupabaseConfigured && !session) return <Auth />
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div className="app-shell">
       {/* Notification Toast */}
       {notification && (
         <div style={{
@@ -237,17 +265,17 @@ export default function App() {
         </div>
       )}
 
-      <Navbar activeTab={activeTab} setActiveTab={setActiveTab} user={user} onSignOut={() => supabase?.auth.signOut()} />
+      <Navbar activeTab={activeTab} setActiveTab={setActiveTab} user={user} theme={theme} setTheme={setTheme} onSignOut={() => supabase?.auth.signOut()} />
 
-      <main style={{ flex: 1, maxWidth: 1200, margin: '0 auto', width: '100%', padding: '24px 20px' }}>
+      <main className="app-content">
         {activeTab === 'dashboard' && (
-          <Dashboard user={user} gainXP={gainXP} setActiveTab={setActiveTab} />
+          <Dashboard user={user} setActiveTab={setActiveTab} />
         )}
         {activeTab === 'languages' && (
-          <Languages user={user} allLanguages={ALL_LANGUAGES} setActiveLanguage={lang => { setActiveLanguage(lang); setActiveTab('flashcards') }} addLanguage={addLanguage} removeLanguage={removeLanguage} showNotif={showNotif} />
+          <Languages user={user} allLanguages={ALL_LANGUAGES} setActiveLanguage={lang => { setActiveLanguage(lang); setActiveTab('flashcards') }} addLanguage={addLanguage} removeLanguage={removeLanguage} resetLanguageProgress={resetLanguageProgress} showNotif={showNotif} />
         )}
         {activeTab === 'flashcards' && (
-          <FlashCards language={activeLanguage} gainXP={gainXP} />
+          <FlashCards language={activeLanguage} gainXP={gainXP} learningSettings={learningSettings} />
         )}
         {activeTab === 'practice' && (
           <Practice language={activeLanguage} gainXP={gainXP} />
@@ -258,6 +286,9 @@ export default function App() {
         {activeTab === 'achievements' && (
           <Achievements user={user} />
         )}
+        {activeTab === 'documents' && <DocumentStudio />}
+        {activeTab === 'vocabulary' && <VocabularyCoach language={activeLanguage} dailyGoal={learningSettings.dailyGoal} gainXP={gainXP} />}
+        {activeTab === 'settings' && <LearningSettings settings={learningSettings} setSettings={setLearningSettings} />}
       </main>
     </div>
   )

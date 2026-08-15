@@ -1,0 +1,20 @@
+import { useState } from 'react'
+import { FileText, Languages, Sparkles, UploadCloud, Download } from 'lucide-react'
+
+const TARGET_LANGUAGES = ['Türkçe', 'İngilizce', 'Almanca', 'Fransızca', 'İspanyolca', 'İtalyanca', 'Portekizce', 'Arapça', 'Japonca', 'Rusça', 'Çince']
+const toBase64 = file => new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result.split(',')[1]); reader.onerror = reject; reader.readAsDataURL(file) })
+
+export default function DocumentStudio() {
+  const [file, setFile] = useState(null), [targetLanguage, setTargetLanguage] = useState('Türkçe'), [mode, setMode] = useState('analyze')
+  const [loading, setLoading] = useState(false), [error, setError] = useState(''), [result, setResult] = useState(null)
+  const pickFile = selected => { setError(''); setResult(null); if (!selected) return; if (selected.type !== 'application/pdf') return setError('Lütfen PDF biçiminde bir dosya seçin.'); if (selected.size > 4 * 1024 * 1024) return setError('İlk sürümde PDF boyutu en fazla 4 MB olabilir.'); setFile(selected) }
+  const processDocument = async () => { if (!file) return setError('Önce bir PDF seçin.'); setLoading(true); setError(''); try { const response = await fetch('/api/document-analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fileName: file.name, fileBase64: await toBase64(file), mode, targetLanguage }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Belge işlenemedi.'); setResult(data) } catch (requestError) { setError(requestError.message) } finally { setLoading(false) } }
+  const downloadResult = () => { const blob = new Blob([result.content], { type: 'text/plain;charset=utf-8' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `${file.name.replace(/\.pdf$/i, '')}-${mode === 'translate' ? targetLanguage : 'analiz'}.txt`; link.click(); URL.revokeObjectURL(url) }
+  return <section className="document-studio animate-fade-in">
+    <div className="studio-hero"><div><span className="studio-kicker"><Sparkles size={14} /> AI BELGE ATÖLYESİ</span><h1>PDF’ini anla, analiz et veya çevir.</h1><p>Belgenin dilini otomatik algılar; özet, ana fikirler ve seçtiğin dile anlamı koruyan çeviri üretir.</p></div><div className="studio-orb"><Languages size={40} /></div></div>
+    <div className="studio-grid"><div className="studio-panel"><label className="upload-zone"><input type="file" accept="application/pdf" onChange={event => pickFile(event.target.files?.[0])} /><UploadCloud size={34} /><strong>{file ? file.name : 'PDF dosyanı buraya bırak veya seç'}</strong><span>{file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : 'Maksimum 4 MB · PDF'}</span></label>
+      <div className="mode-picker"><button className={mode === 'analyze' ? 'active' : ''} onClick={() => setMode('analyze')}><FileText size={17} /> Analiz et</button><button className={mode === 'translate' ? 'active' : ''} onClick={() => setMode('translate')}><Languages size={17} /> Çevir</button></div>
+      {mode === 'translate' && <label className="target-select">Hedef dil<select value={targetLanguage} onChange={event => setTargetLanguage(event.target.value)}>{TARGET_LANGUAGES.map(language => <option key={language}>{language}</option>)}</select></label>}{error && <p className="studio-error">{error}</p>}<button className="btn-primary studio-submit" onClick={processDocument} disabled={loading}>{loading ? 'Belge işleniyor…' : mode === 'translate' ? 'Çeviriyi başlat' : 'Belgeyi analiz et'}</button>
+    </div><div className="studio-panel result-panel">{result ? <><div className="result-head"><div><span>ALGILANAN DİL</span><strong>{result.detectedLanguage}</strong></div><button className="btn-ghost" onClick={downloadResult}><Download size={15} /> İndir</button></div><pre>{result.content}</pre></> : <div className="empty-result"><Sparkles size={32} /><strong>Sonuç burada görünecek</strong><span>PDF yüklendiğinde dil otomatik olarak algılanacak.</span></div>}</div></div>
+  </section>
+}

@@ -1,6 +1,7 @@
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts'
 import { Flame, Target, Clock, TrendingUp, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
+import { summarizeActivity } from '../lib/activity'
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
@@ -17,14 +18,15 @@ const CustomTooltip = ({ active, payload, label }) => {
   )
 }
 
-export default function Dashboard({ user, gainXP, setActiveTab }) {
+export default function Dashboard({ user, setActiveTab }) {
   const [chartType, setChartType] = useState('xp')
-  const weeklyPct = Math.min(100, Math.round((user.weeklyXP / user.weeklyGoal) * 100))
+  const activity = summarizeActivity(user.activityLog)
+  const weeklyPct = Math.min(100, Math.round((activity.weeklyXP / user.weeklyGoal) * 100))
 
   const statCards = [
-    { icon: Flame, color: '#f59e0b', label: 'Günlük Seri', value: `${user.streak} gün`, bg: 'rgba(245,158,11,0.1)' },
-    { icon: Target, color: '#7c3aed', label: 'Haftalık XP', value: `${user.weeklyXP}/${user.weeklyGoal}`, bg: 'rgba(124,58,237,0.1)' },
-    { icon: TrendingUp, color: '#10b981', label: 'Toplam XP', value: user.totalXP.toLocaleString(), bg: 'rgba(16,185,129,0.1)' },
+    { icon: Flame, color: '#f59e0b', label: 'Günlük Seri', value: `${activity.streak} gün`, bg: 'rgba(245,158,11,0.1)' },
+    { icon: Target, color: '#7c3aed', label: 'Haftalık XP', value: `${activity.weeklyXP}/${user.weeklyGoal}`, bg: 'rgba(124,58,237,0.1)' },
+    { icon: TrendingUp, color: '#10b981', label: 'Gerçek Toplam XP', value: activity.totalXP.toLocaleString(), bg: 'rgba(16,185,129,0.1)' },
     { icon: Clock, color: '#06b6d4', label: 'Dil Sayısı', value: user.languages.length, bg: 'rgba(6,182,212,0.1)' },
   ]
 
@@ -37,7 +39,7 @@ export default function Dashboard({ user, gainXP, setActiveTab }) {
             Merhaba, <span className="gradient-text">{user.name} 👋</span>
           </h1>
           <p style={{ color: '#94a3b8', marginTop: 6, fontSize: 15 }}>
-            Bugün öğrenmeye hazır mısın? {user.streak} günlük serini devam ettir!
+            Bugün öğrenmeye hazır mısın? {activity.streak ? `${activity.streak} günlük serini devam ettir!` : 'İlk etkinliğini tamamlayarak serini başlat!'}
           </p>
         </div>
         <button className="btn-primary animate-pulse-glow" onClick={() => setActiveTab('flashcards')}
@@ -82,7 +84,7 @@ export default function Dashboard({ user, gainXP, setActiveTab }) {
             </div>
           </div>
           <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={user.weeklyData}>
+            <AreaChart data={activity.weeklyData}>
               <defs>
                 <linearGradient id="grad1" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#7c3aed" stopOpacity={0.5}/>
@@ -130,13 +132,13 @@ export default function Dashboard({ user, gainXP, setActiveTab }) {
             </div>
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 14, color: '#94a3b8' }}>
-                <span style={{ color: '#f8fafc', fontWeight: 600 }}>{user.weeklyXP}</span> / {user.weeklyGoal} XP
+                <span style={{ color: '#f8fafc', fontWeight: 600 }}>{activity.weeklyXP}</span> / {user.weeklyGoal} XP
               </div>
-              <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>Hedefe {user.weeklyGoal - user.weeklyXP} XP kaldı</div>
+              <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>{activity.weeklyXP >= user.weeklyGoal ? 'Haftalık hedef tamamlandı 🎉' : `Hedefe ${user.weeklyGoal - activity.weeklyXP} XP kaldı`}</div>
             </div>
           </div>
-          <button className="btn-ghost" style={{ width: '100%', textAlign: 'center' }} onClick={() => gainXP(10)}>
-            🎯 Pratik Yap (+10 XP)
+          <button className="btn-ghost" style={{ width: '100%', textAlign: 'center' }} onClick={() => setActiveTab('practice')}>
+            🎯 Pratik ekranına git
           </button>
         </div>
       </div>
